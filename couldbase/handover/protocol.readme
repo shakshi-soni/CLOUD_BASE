@@ -1,0 +1,23 @@
+# 🔄 Handover & Context Preservation Protocol
+
+This directory implements the core state transition and audit trailing framework for the CloudDash multi-agent routing loop.
+
+## ⚙️ How It Works
+
+1. **State Preservation:** Conversations do not drop context because the entire session payload is managed natively via a unified Pydantic state schema, passed across agent domains without data wiping.
+2. **Deterministic Interception:** When an active agent encounters an out-of-scope intent, it returns a boundary signal flag (e.g., `[[ROUTE_TO_BILLING]]`).
+3. **Telemetry & Audit Trailing:** The `HandoverManager` registers a structured trace logging event detailing exactly why the handoff happened, preserving session lineage for live monitoring screens.
+
+## 📊 Handoff Trace Payload Schema
+
+```json
+{
+  "timestamp": "2026-06-22T16:24:54Z",
+  "source": "technical_support",
+  "target": "billing",
+  "reason": "Cross-domain intersection: Customer inquired about tier pricing updates.",
+  "context_snapshot": {
+    "customer_id": "CUST-901",
+    "issue_type": "AWS Alert Failures"
+  }
+}

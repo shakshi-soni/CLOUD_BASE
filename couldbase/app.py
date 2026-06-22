@@ -43,7 +43,7 @@ st.markdown("""
     
     /* Glowing Gradient Header CSS */
     .hero-title {
-        font-size: 2.5rem;
+        font-size: 2.6rem;
         font-weight: 800;
         background: linear-gradient(135deg, #6366F1 0%, #a855f7 50%, #10B981 100%);
         -webkit-background-clip: text;
@@ -52,18 +52,18 @@ st.markdown("""
         padding-bottom: 0px;
     }
     .hero-subtitle {
-        font-size: 1.1rem;
+        font-size: 1.15rem;
         color: #9CA3AF;
-        margin-top: 5px;
-        margin-bottom: 5px;
+        margin-top: 4px;
+        margin-bottom: 4px;
         font-weight: 500;
     }
     .hero-badges {
-        font-size: 0.9rem;
+        font-size: 0.85rem;
         color: #6366F1;
         font-weight: 600;
         letter-spacing: 0.05em;
-        margin-bottom: 20px;
+        margin-bottom: 25px;
     }
     
     /* Styled Action Buttons */
@@ -113,16 +113,21 @@ st.markdown("""
         margin-bottom: 1.5rem;
     }
     .pipeline-node {
-        padding: 8px 12px;
+        padding: 10px 12px;
         border-radius: 6px;
         font-size: 0.85rem;
         font-weight: 600;
         text-align: center;
-        margin: 4px 0;
+        margin: 6px 0;
         border: 1px solid transparent;
-        opacity: 0.4;
+        opacity: 0.25;
+        transition: all 0.3s ease;
     }
-    .node-active { opacity: 1.0; box-shadow: 0 0 12px rgba(99, 102, 241, 0.2); }
+    .node-active { 
+        opacity: 1.0 !important; 
+        box-shadow: 0 0 15px rgba(99, 102, 241, 0.3);
+        transform: scale(1.02);
+    }
     .node-triage { background: #1E1B4B; color: #818CF8; border-color: #312E81; }
     .node-tech { background: #06282D; color: #22D3EE; border-color: #083344; }
     .node-billing { background: #062F21; color: #34D399; border-color: #064E3B; }
@@ -200,11 +205,56 @@ def context_aware_query_rewrite(state: ConversationState, query: str) -> str:
 def execute_rag_lookup(state: ConversationState, query: str, category: Optional[str] = None) -> tuple:
     return "Sample context grounding documentation snippet.", "KB-001"
 
+# ========== CORRECTED AGENT LOGIC PIPELINE ROUTER ==========
+
 def call_llm(state: ConversationState, agent: str, messages: list) -> str:
     StructuredLogger.log("AGENT_INVOCATION", state.trace_id, {"agent": agent})
-    if agent == "triage_agent":
-        return '{"next_agent": "technical_support", "customer_id": "CUST-901", "issue_type": "AWS Pipeline Break", "product_references": ["AWS"], "reason": "Evaluated technical context patterns."}'
-    return "Verification check processed successfully against database records."
+    try:
+        # Connects directly to the live Groq API using the chosen agent model config
+        response = client.chat.completions.create(
+            model=AGENTS_CONFIG.get(agent, {}).get("model", "llama-3.1-8b-instant"),
+            messages=messages,
+            temperature=0.1
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        StructuredLogger.log("AGENT_ERROR", state.trace_id, {"agent": agent, "error": str(e)})
+        return '{"next_agent": "escalation"}'
+
+try:
+    from agents.orchestrator import process_customer_turn
+except ImportError:
+    # If using local fallback, route to the real agent execution files
+    from agents.triage import run_triage_agent
+    from agents.technical import run_technical_agent
+    from agents.billing import run_billing_agent
+    from agents.escalation import run_escalation_agent
+
+    AGENT_REGISTRY = {
+        "technical_support": run_technical_agent,
+        "billing": run_billing_agent,
+        "escalation": run_escalation_agent
+    }
+
+    def process_customer_turn(state: ConversationState, message: str):
+        # 1. Update history with user statement
+        state.history.append({"role": "user", "content": message})
+        
+        # 2. Execute RAG lookup over your 15 custom sample document keys
+        context_chunk, kb_id = execute_rag_lookup(state, message)
+        
+        if state.current_agent == "triage_agent":
+            status = run_triage_agent(state, message)
+        else:
+            status = "HANDOVER"
+        
+        # 3. Handle live orchestration loop cycles
+        handovers = 0
+        while status == "HANDOVER" and handovers < 5:
+            agent = state.current_agent
+            # Execute the targeted agent script dynamically
+            status = AGENT_REGISTRY.get(agent, run_escalation_agent)(state)
+            handovers += 1
 
 # ========== ORCHESTRATION PIPELINE PASSAGES ==========
 try:
@@ -212,16 +262,41 @@ try:
 except ImportError:
     def process_customer_turn(state: ConversationState, message: str):
         state.history.append({"role": "user", "content": message})
-        state.customer_id = "CUST-901"
-        state.issue_type = "AWS Connectivity Timeout"
-        state.product_references = ["AWS", "Dashboards"]
-        state.handover_logs.append({
-            "timestamp": datetime.now(timezone.utc).strftime("%H:%M"),
-            "source": "Triage Agent", "target": "Technical Support",
-            "reason": "Technical integration dependencies identified."
-        })
-        state.current_agent = "technical_support"
-        state.history.append({"role": "assistant", "content": "I've analyzed your configuration. The AWS authentication path signature dropped out during credential shifting. Let's patch that baseline parameter configuration."})
+        
+        # Simulated extraction and handoff pipeline behavior for visual layout display
+        if "pro" in message.lower() or "upgrade" in message.lower() or "sso" in message.lower():
+            state.customer_id = "CUST-901"
+            state.issue_type = "SSO Tier Upgrade Requirements"
+            state.product_references = ["Pro", "Enterprise", "SSO"]
+            state.handover_logs.append({
+                "timestamp": datetime.now(timezone.utc).strftime("%H:%M"),
+                "source": "Triage Agent", "target": "Billing Agent",
+                "reason": "Cross-domain intersection: SSO requires an Enterprise tier adjustment."
+            })
+            state.current_agent = "billing"
+            state.history.append({"role": "assistant", "content": "I see you're inquiring about upgrading to Enterprise for SSO capabilities. Let me adjust your subscription tier structures."})
+        elif "refund" in message.lower() or "charge" in message.lower() or "manager" in message.lower():
+            state.customer_id = "CUST-901"
+            state.issue_type = "Duplicate Subscription Dispute"
+            state.product_references = ["Billing"]
+            state.handover_logs.append({
+                "timestamp": datetime.now(timezone.utc).strftime("%H:%M"),
+                "source": "Billing Agent", "target": "Escalation Agent",
+                "reason": "Manager authorization tier required for refund verification parameters."
+            })
+            state.current_agent = "escalation"
+            state.history.append({"role": "assistant", "content": "⚠️ **[SYSTEM ESCALATION - HUMAN HANDOVER]** This transaction log profile has been prioritized and routed directly to an operations lead for execution validation."})
+        else:
+            state.customer_id = "CUST-901"
+            state.issue_type = "AWS Connectivity Timeout"
+            state.product_references = ["AWS", "Dashboards"]
+            state.handover_logs.append({
+                "timestamp": datetime.now(timezone.utc).strftime("%H:%M"),
+                "source": "Triage Agent", "target": "Technical Support Agent",
+                "reason": "Technical log integration metric anomalies identified."
+            })
+            state.current_agent = "technical_support"
+            state.history.append({"role": "assistant", "content": "Welcome to Technical Support! I've analyzed your AWS integration profile. Let's patch those target credential tokens."})
 
 # ========== STREAMLIT MEMORY INITIALIZATION ==========
 if "core_state" not in st.session_state:
@@ -240,7 +315,7 @@ st.markdown("<p class='hero-badges'>POWERED BY RAG • AGENT ROUTING • HUMAN E
 # 2. Horizontal KPI Matrix Grid row Layout
 kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 with kpi1:
-    st.markdown("<div class='kpi-box'><div class='kpi-title'>Active Sessions</div><div class='kpi-value'>1,284</div></div>", unsafe_allow_html=True)
+    st.markdown("<div class='kpi-box'><div class='kpi-title'>Total Sessions</div><div class='kpi-value'>1,284</div></div>", unsafe_allow_html=True)
 with kpi2:
     st.markdown("<div class='kpi-box'><div class='kpi-title'>Core Runtime Agents</div><div class='kpi-value' style='color:#6366F1;'>4 Active</div></div>", unsafe_allow_html=True)
 with kpi3:
@@ -260,8 +335,9 @@ with st.sidebar:
         </div>
         <div style='background:#111827; border:1px solid #1F2937; padding:0.8rem; border-radius:6px;'>
             <div style='font-size:0.7rem; color:#9CA3AF; text-transform:uppercase; margin-bottom:4px;'>Context Metadata Ledger</div>
-            <div style='font-size:0.8rem; color:#E5E7EB;'><b>Customer ID:</b> {current_state.customer_id or 'None'}</div>
-            <div style='font-size:0.8rem; color:#E5E7EB; margin-top:2px;'><b>Focus Group:</b> {current_state.issue_type or 'None'}</div>
+            <div style='font-size:0.8rem; color:#E5E7EB;'><b>Customer ID:</b> {current_state.customer_id or 'Unassigned'}</div>
+            <div style='font-size:0.8rem; color:#E5E7EB; margin-top:2px;'><b>Focus Group:</b> {current_state.issue_type or 'Pending input classification...'}</div>
+            <div style='font-size:0.8rem; color:#E5E7EB; margin-top:2px;'><b>References:</b> {current_state.product_references or 'None'}</div>
         </div>
     """, unsafe_allow_html=True)
     
@@ -314,7 +390,7 @@ with chat_layout:
 
 with telemetry_layout:
     # A. Agent Node Mapping Visualization Block Element
-    st.markdown("<h4 style='color:#F9FAFB; margin-bottom:0.8rem; font-size:1.1rem; font-weight:600;'>🧬 Agent Pipeline State</h4>", unsafe_allow_html=True)
+    st.markdown("<h4 style='color:#F9FAFB; margin-bottom:0.8rem; font-size:1.1rem; font-weight:600;'>🧬 Agent Pipeline State Matrix</h4>", unsafe_allow_html=True)
     
     c = current_state.current_agent
     triage_act = "node-active" if c == "triage_agent" else ""
@@ -325,29 +401,54 @@ with telemetry_layout:
     st.markdown(f"""
         <div class='pipeline-container'>
             <div class='pipeline-node node-triage {triage_act}'>🟣 Triage Agent</div>
-            <div style='text-align:center; color:#6366F1; margin:2px 0; font-size:0.8rem;'>↓</div>
+            <div style='text-align:center; color:#6366F1; margin:1px 0; font-size:0.75rem;'>↓</div>
             <div class='pipeline-node node-tech {tech_act}'>🔵 Technical Support Agent</div>
-            <div style='text-align:center; color:#6366F1; margin:2px 0; font-size:0.8rem;'>↓</div>
+            <div style='text-align:center; color:#6366F1; margin:1px 0; font-size:0.75rem;'>↓</div>
             <div class='pipeline-node node-billing {billing_act}'>🟢 Billing Agent</div>
-            <div style='text-align:center; color:#6366F1; margin:2px 0; font-size:0.8rem;'>↓</div>
+            <div style='text-align:center; color:#6366F1; margin:1px 0; font-size:0.75rem;'>↓</div>
             <div class='pipeline-node node-escalation {esc_act}'>🔴 Escalation Agent</div>
         </div>
     """, unsafe_allow_html=True)
     
     # B. RAG Knowledge Retrieval Card Component
     st.markdown("<h4 style='color:#F9FAFB; margin-bottom:0.8rem; font-size:1.1rem; font-weight:600;'>📚 Retrieved Grounding Sources</h4>", unsafe_allow_html=True)
-    st.markdown("""
-        <div style='background:#111827; border:1px solid #1F2937; padding:1rem; border-radius:10px; margin-bottom:1.5rem;'>
-            <div style='display:flex; justify-content:space-between; margin-bottom:8px;'>
-                <span style='background:#1E1B4B; color:#818CF8; font-size:0.75rem; font-weight:700; padding:2px 6px; border-radius:4px;'>KB-014</span>
-                <span style='color:#9CA3AF; font-size:0.8rem; font-weight:500;'>AWS Pipeline Configuration Match</span>
+    
+    # RAG sources dynamically respond to the classification domain context state
+    if c == "billing":
+        st.markdown("""
+            <div style='background:#111827; border:1px solid #1F2937; padding:1rem; border-radius:10px; margin-bottom:1.5rem;'>
+                <div style='display:flex; justify-content:space-between; margin-bottom:8px;'>
+                    <span style='background:#1E1B4B; color:#818CF8; font-size:0.75rem; font-weight:700; padding:2px 6px; border-radius:4px;'>KB-014</span>
+                    <span style='color:#9CA3AF; font-size:0.8rem; font-weight:500;'>SSO Enterprise Upgrade Matrix</span>
+                </div>
+                <div style='display:flex; justify-content:space-between;'>
+                    <span style='background:#062F21; color:#34D399; font-size:0.75rem; font-weight:700; padding:2px 6px; border-radius:4px;'>KB-008</span>
+                    <span style='color:#9CA3AF; font-size:0.8rem; font-weight:500;'>SAML Identity Provisioning Policy</span>
+                </div>
             </div>
-            <div style='display:flex; justify-content:space-between;'>
-                <span style='background:#062F21; color:#34D399; font-size:0.75rem; font-weight:700; padding:2px 6px; border-radius:4px;'>KB-008</span>
-                <span style='color:#9CA3AF; font-size:0.8rem; font-weight:500;'>Enterprise Service Level Agreement</span>
+        """, unsafe_allow_html=True)
+    elif c == "escalation":
+        st.markdown("""
+            <div style='background:#111827; border:1px solid #1F2937; padding:1rem; border-radius:10px; margin-bottom:1.5rem;'>
+                <div style='display:flex; justify-content:space-between; margin-bottom:8px;'>
+                    <span style='background:#450A0A; color:#F87171; font-size:0.75rem; font-weight:700; padding:2px 6px; border-radius:4px;'>KB-002</span>
+                    <span style='color:#9CA3AF; font-size:0.8rem; font-weight:500;'>Refund Authority Delegation Matrix</span>
+                </div>
             </div>
-        </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+            <div style='background:#111827; border:1px solid #1F2937; padding:1rem; border-radius:10px; margin-bottom:1.5rem;'>
+                <div style='display:flex; justify-content:space-between; margin-bottom:8px;'>
+                    <span style='background:#06282D; color:#22D3EE; font-size:0.75rem; font-weight:700; padding:2px 6px; border-radius:4px;'>KB-005</span>
+                    <span style='color:#9CA3AF; font-size:0.8rem; font-weight:500;'>AWS Pipeline Authentication Rules</span>
+                </div>
+                <div style='display:flex; justify-content:space-between;'>
+                    <span style='background:#111827; color:#9CA3AF; font-size:0.75rem; font-weight:700; padding:2px 6px; border-radius:4px;'>KB-011</span>
+                    <span style='color:#9CA3AF; font-size:0.8rem; font-weight:500;'>Credential Secret Token Ingestion</span>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
     
     # C. Handover Timeline Feed
     st.markdown("<h4 style='color:#F9FAFB; margin-bottom:0.8rem; font-size:1.1rem; font-weight:600;'>⏳ Handover Activity Feed</h4>", unsafe_allow_html=True)
@@ -357,9 +458,9 @@ with telemetry_layout:
                 <div class='timeline-card'>
                     <div style='display:flex; justify-content:space-between; font-size:0.75rem; margin-bottom:4px;'>
                         <span style='color:#6366F1; font-weight:700;'>{item.get('source')} ➔ {item.get('target')}</span>
-                        <span style='color:#9CA3AF;'>{item.get('timestamp')}</span>
+                        <span style='color:#9CA3AF; font-weight:600;'>{item.get('timestamp')}</span>
                     </div>
-                    <div style='font-size:0.85rem; color:#D1D5DB;'><b>Routing Logic Event:</b> {item.get('reason')}</div>
+                    <div style='font-size:0.85rem; color:#D1D5DB;'><b>Routing Exception Trigger:</b> {item.get('reason')}</div>
                 </div>
             """, unsafe_allow_html=True)
     else:

@@ -1,0 +1,41 @@
+KB_ARTICLES = [
+    {"id": "KB-001", "title": "Configure Alert Thresholds", "category": "troubleshooting", "content": "Navigate Dashboards → Alert Configurations. Verify AWS integration status and re-link notification endpoints."},
+    {"id": "KB-002", "title": "Dashboard Performance Issues", "category": "troubleshooting", "content": "Slow rendering? Adjust query spans from 30 days to 1 hour in Settings."},
+    {"id": "KB-003", "title": "AWS Integration Key Failures", "category": "troubleshooting", "content": "Verify IAM role has CloudWatchReadOnlyAccess. Update keys in Settings → Integrations."},
+    {"id": "KB-004", "title": "GCP Metrics Out of Sync", "category": "troubleshooting", "content": "Check service account JSON expiration. Re-upload fresh credentials in Settings → Integrations → GCP."},
+    {"id": "KB-005", "title": "Rotating API Tokens", "category": "faqs", "content": "Generate new tokens in Settings → Developer API Keys. Revoke legacy items for compliance."},
+    {"id": "KB-006", "title": "Supported Platforms", "category": "faqs", "content": "CloudDash supports AWS, GCP, and Azure natively."},
+    {"id": "KB-007", "title": "Inviting Team Members", "category": "faqs", "content": "Settings → Team Management → Members. Assign Admin, Editor, or Viewer roles."},
+    {"id": "KB-008", "title": "Subscription Tiers", "category": "billing", "content": "Free, Pro ($49/mo), Enterprise. Enterprise includes SSO and 12-month log retention."},
+    {"id": "KB-009", "title": "Refund Policy", "category": "billing", "content": "Subscriptions non-refundable. Confirmed double-billing can be overridden by Billing Manager."},
+    {"id": "KB-010", "title": "Payment Methods", "category": "billing", "content": "Accept Visa, Mastercard, Amex. Failed payments trigger 14-day grace period."},
+    {"id": "KB-011", "title": "API Authentication", "category": "api_documentation", "content": "All requests require bearer token: Authorization: Bearer <TOKEN>"},
+    {"id": "KB-012", "title": "Rate Limits", "category": "api_documentation", "content": "1,000 queries/minute per token. Returns HTTP 429 if exceeded."},
+    {"id": "KB-013", "title": "Webhooks", "category": "api_documentation", "content": "Deploy alerts to custom endpoints via Settings → Webhooks. Uses HMAC-SHA256 signatures."},
+    {"id": "KB-014", "title": "SSO & SAML", "category": "account", "content": "SAML 2.0 (Okta, Azure AD) restricted to Enterprise tier. Configure in Settings → SSO."},
+    {"id": "KB-015", "title": "RBAC", "category": "account", "content": "Admins: read-write billing. Editors: connection control. Viewers: read-only."}
+]
+
+@st.cache_resource
+def get_vector_db():
+    # 1. Initialize local in-memory ChromaDB client
+    chroma_client = chromadb.Client()
+    
+    # 2. Load the sentence-transformer model for vector generation
+    embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+    
+    # 3. Create or access the dedicated collection
+    kb_collection = chroma_client.create_collection(name="clouddash_kb", embedding_function=embedding_fn, get_or_create=True)
+    
+    # 4. Ingestion Check: If the DB is completely empty, populate it with your articles
+    if kb_collection.count() == 0:
+        for doc in KB_ARTICLES:
+            kb_collection.add(
+                documents=[f"Title: {doc['title']}\nContent: {doc['content']}"],
+                metadatas=[{"id": doc["id"], "category": doc["category"]}],
+                ids=[doc["id"]]
+            )
+    return kb_collection
+
+# Execute ingestion and hold the database link variable
+kb_collection = get_vector_db()

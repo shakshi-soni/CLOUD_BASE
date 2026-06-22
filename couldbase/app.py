@@ -31,7 +31,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ========== ORIGINAL UI DESIGN SYSTEM (REVERTED BACK) ==========
+# ========== ORIGINAL UI DESIGN SYSTEM ==========
 st.markdown("""
     <style>
     .stApp { background-color: #0A0F1C; color: #F3F4F6; }
@@ -169,7 +169,7 @@ class ConversationState(BaseModel):
     active_kb_citations: List[Dict[str, str]] = []
     guardrail_alerts: List[str] = []
 
-# ========== ACTIVE CHROMADB ENGINE (LIGHTWEIGHT AUTOMATIC) ==========
+# ========== CHROMADB VECTOR ENGINE ==========
 @st.cache_resource
 def initialize_vector_db():
     chroma_client = chromadb.EphemeralClient()
@@ -222,7 +222,7 @@ def query_vector_kb(query: str, n_results: int = 1) -> List[Dict[str, str]]:
     except Exception:
         return []
 
-# ========== SYSTEM SECURITY GUARDRAIL PROTCOLS ==========
+# ========== SYSTEM SECURITY GUARDRAILS ==========
 def check_input_guardrail(text: str) -> bool:
     malicious_patterns = [r"ignore previous instructions", r"system prompt", r"override rules"]
     for pattern in malicious_patterns:
@@ -235,7 +235,7 @@ def apply_output_guardrail(text: str) -> str:
     redacted = re.sub(r"secret_key_[a-zA-Z0-9]+", "[REDACTED_SECRET]", redacted)
     return redacted
 
-# ========== AGENTS CORE ROUTER ARCHITECTURE ==========
+# ========== AGENT ROLES AND SETTINGS ==========
 AGENTS_CONFIG = {
     "triage_agent": {
         "model": "llama-3.1-8b-instant",
@@ -255,7 +255,7 @@ AGENTS_CONFIG = {
     }
 }
 
-# ========== EXECUTION ORCHESTRATION PIPELINE CONTROL ==========
+# ========== PIPELINE MANAGEMENT & EXTRACTION FIX ==========
 def run_orchestration_loop(state: ConversationState, user_message: str):
     state.guardrail_alerts = []
 
@@ -274,31 +274,39 @@ def run_orchestration_loop(state: ConversationState, user_message: str):
         if matches[0] not in state.active_kb_citations:
             state.active_kb_citations.append(matches[0])
 
-    if state.current_agent == "triage_agent":
-        try:
-            res = client.chat.completions.create(
-                model=AGENTS_CONFIG["triage_agent"]["model"],
-                messages=[
-                    {"role": "system", "content": AGENTS_CONFIG["triage_agent"]["system_prompt"]},
-                    {"role": "user", "content": user_message}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.1
-            ).choices[0].message.content
+    # FIX: Extract metadata out of the triage conditional to catch updates at any point in the chat
+    try:
+        extraction_res = client.chat.completions.create(
+            model=AGENTS_CONFIG["triage_agent"]["model"],
+            messages=[
+                {"role": "system", "content": AGENTS_CONFIG["triage_agent"]["system_prompt"]},
+                {"role": "user", "content": user_message}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.1
+        ).choices[0].message.content
+        
+        parsed_data = json.loads(extraction_res)
+        
+        # Pull new entity extractions into state instantly
+        if parsed_data.get("customer_id"):
+            state.customer_id = parsed_data.get("customer_id")
+        if parsed_data.get("issue_type"):
+            state.issue_type = parsed_data.get("issue_type")
             
-            data = json.loads(res)
-            state.customer_id = data.get("customer_id") or state.customer_id
-            state.issue_type = data.get("issue_type") or state.issue_type
-            state.current_agent = data.get("next_agent", "technical_support")
-            
+        # Only rewrite routing state if we are currently parked at triage
+        if state.current_agent == "triage_agent":
+            state.current_agent = parsed_data.get("next_agent", "technical_support")
             state.handover_logs.append({
                 "timestamp": datetime.now(timezone.utc).strftime("%H:%M"),
                 "source": "Triage Agent", "target": state.current_agent.replace("_", " ").title(),
                 "reason": f"Intent: {state.issue_type}"
             })
-        except Exception:
+    except Exception:
+        if state.current_agent == "triage_agent":
             state.current_agent = "technical_support"
 
+    # Handoff Hops execution Loop
     hops = 0
     while hops < 3:
         current = state.current_agent
@@ -343,7 +351,7 @@ def run_orchestration_loop(state: ConversationState, user_message: str):
             state.history.append({"role": "assistant", "content": "I am connecting an escalation team lead to look into this context pattern for you."})
             break
 
-# ========== STREAMLIT RUNTIME MEMORY INITIALIZATION ==========
+# ========== INITIALIZATION ==========
 if "core_state" not in st.session_state:
     st.session_state.core_state = ConversationState()
 if "logs" not in st.session_state:
@@ -351,12 +359,11 @@ if "logs" not in st.session_state:
 
 current_state = st.session_state.core_state
 
-# ========== STREAMLIT SCREEN LAYOUT RUNTIME UI ==========
+# ========== DRAW DASHBOARD USER INTERFACE ==========
 st.markdown("<h1 class='hero-title'>CloudDash AI Support Engine</h1>", unsafe_allow_html=True)
 st.markdown("<p class='hero-subtitle'>Multi-Agent Customer Support Platform</p>", unsafe_allow_html=True)
 st.markdown("<p class='hero-badges'>POWERED BY RAG • AGENT ROUTING • HUMAN ESCALATION <span style='color:#10B981; margin-left:15px;'>● [ACTIVE] 99.9% RESOLUTION TRACKING</span></p>", unsafe_allow_html=True)
 
-# Dynamic Dashboard KPIs calculation
 total_sessions = 1284 + len(st.session_state.logs)
 kb_hits_pct = "98%" if len(current_state.active_kb_citations) > 0 else "0%"
 
@@ -372,11 +379,10 @@ with kpi4:
 
 st.markdown("<div class='clean-hr'></div>", unsafe_allow_html=True)
 
-# Display Intercepted Guardrail Warnings
 for alert in current_state.guardrail_alerts:
     st.markdown(f"<div class='guardrail-warning'>{alert}</div>", unsafe_allow_html=True)
 
-# Sidebar Metrics
+# Sidebar Parameters Design
 with st.sidebar:
     st.markdown("<h3 style='color:#F9FAFB; margin-bottom:1rem; font-size:1.1rem;'>🛰️ Operational Parameters</h3>", unsafe_allow_html=True)
     st.markdown(f"""
@@ -397,7 +403,7 @@ with st.sidebar:
         st.session_state.logs = []
         st.rerun()
 
-# ORIGINAL PRE-BUILT SCENARIO SELECTION BUTTONS (RESTORED)
+# Scenarios Cards Selector Strip
 st.markdown("<p style='font-size:0.75rem; font-weight:600; color:#9CA3AF; text-transform:uppercase; margin-bottom:0.6rem; letter-spacing:0.05em;'>Pre-seeded System Validation Scenarios</p>", unsafe_allow_html=True)
 b1, b2, b3, b4 = st.columns(4)
 faq_query = None
@@ -420,7 +426,7 @@ if faq_query:
 
 st.markdown("<div class='clean-hr'></div>", unsafe_allow_html=True)
 
-# Main Application Content Columns Split
+# Main Application Workspace
 chat_layout, telemetry_layout = st.columns([11, 9], gap="large")
 
 with chat_layout:
@@ -437,7 +443,7 @@ with chat_layout:
         st.rerun()
 
 with telemetry_layout:
-    # A. Agent Node Pipeline Map View
+    # A. Agent Matrix View
     st.markdown("<h4 style='color:#F9FAFB; margin-bottom:0.8rem; font-size:1.1rem; font-weight:600;'>🧬 Agent Pipeline State Matrix</h4>", unsafe_allow_html=True)
     c = current_state.current_agent
     triage_act = "node-active" if c == "triage_agent" else ""
@@ -457,7 +463,7 @@ with telemetry_layout:
         </div>
     """, unsafe_allow_html=True)
     
-    # B. Dynamic RAG Grounding Cards View
+    # B. RAG Citations Ledger Box
     st.markdown("<h4 style='color:#F9FAFB; margin-bottom:0.8rem; font-size:1.1rem; font-weight:600;'>📚 Retrieved Grounding Sources</h4>", unsafe_allow_html=True)
     if current_state.active_kb_citations:
         st.markdown("<div style='background:#111827; border:1px solid #1F2937; padding:1rem; border-radius:10px; margin-bottom:1.5rem;'>", unsafe_allow_html=True)
@@ -473,7 +479,7 @@ with telemetry_layout:
     else:
         st.markdown("<div style='color:#9CA3AF; font-size:0.85rem; font-style:italic; margin-bottom:1.5rem;'>No knowledge assets fetched yet.</div>", unsafe_allow_html=True)
     
-    # C. Handover Timeline
+    # C. Handover Timeline Feed
     st.markdown("<h4 style='color:#F9FAFB; margin-bottom:0.8rem; font-size:1.1rem; font-weight:600;'>⏳ Handover Activity Feed</h4>", unsafe_allow_html=True)
     if current_state.handover_logs:
         for item in current_state.handover_logs:

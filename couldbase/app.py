@@ -107,7 +107,7 @@ KB_ARTICLES = [
 ]
 
 # ========== VECTOR STORAGE ENGINE ==========
-@st.cache_resourced
+@st.cache_resource
 def get_vector_db():
     chroma_client = chromadb.Client()
     embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")

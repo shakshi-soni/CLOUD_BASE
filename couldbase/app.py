@@ -157,6 +157,16 @@ class ConversationState(BaseModel):
     active_kb_citations: List[Dict[str, str]] = []
     guardrail_alerts: List[str] = []
 
+# ========== JSON EVENT LOGGING ENGINE ==========
+def log_event(event_type: str, trace_id: str, payload: dict):
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event_type": event_type,
+        "trace_id": trace_id,
+        **payload
+    }
+    print(json.dumps(entry))
+
 # ========== CHROMADB VECTOR ENGINE ==========
 @st.cache_resource
 def initialize_vector_db():
@@ -231,7 +241,7 @@ AGENTS_CONFIG = {
     },
     "technical_support": {
         "model": "llama-3.1-8b-instant",
-        "system_prompt": "You are Technical Support. Answer the technical inquiry professionally using the provided context. Always cite your source explicitly as [KB-XXX]. If the user asks about payments, plans, or upgrading tiers, reply exactly with: [[ROUTE_TO_BILLING]]."
+        "system_prompt": "You are Technical Support. Answer the technical inquiry professionally using the provided context. Always cite your source explicitly as [KB-XXX]. Only cite KB article IDs that are explicitly present in the grounding context provided. Never invent or guess KB IDs. If the user asks about payments, plans, or upgrading tiers, reply exactly with: [[ROUTE_TO_BILLING]]."
     },
     "billing": {
         "model": "llama-3.1-8b-instant",
@@ -269,11 +279,18 @@ def run_orchestration_loop(state: ConversationState, user_message: str):
     state.history.append({"role": "user", "content": user_message})
     
     matches = query_vector_kb(user_message, n_results=1)
-    context_text = ""
-    if matches:
-        context_text = f"\n[GROUNDING CONTEXT] Rely on this data chunk to construct answers:\n{matches[0]['content']}\n"
-        if matches[0] not in state.active_kb_citations:
-            state.active_kb_citations.append(matches[0])
+    
+    # Place 2 Log Call: KB Retrieval
+    log_event("KB_RETRIEVAL", state.trace_id, {"query": user_message, "result": matches[0]['id'] if matches else "none"})
+    
+    # 3. KB Not Found Handling Execution Turn
+    if not matches:
+        state.history.append({"role": "assistant", "content": "I couldn't find relevant information in our knowledge base for this query. Would you like me to escalate this to our product team?"})
+        return
+
+    context_text = f"\n[GROUNDING CONTEXT] Rely on this data chunk to construct answers:\n{matches[0]['content']}\n"
+    if matches[0] not in state.active_kb_citations:
+        state.active_kb_citations.append(matches[0])
 
     # Dynamic extraction turn
     try:
@@ -314,6 +331,9 @@ def run_orchestration_loop(state: ConversationState, user_message: str):
         current = clean_agent_key(state.current_agent)
         state.current_agent = current  # Force state alignment
 
+        # Place 1 Log Call: Agent Invocation
+        log_event("AGENT_INVOCATION", state.trace_id, {"agent": current})
+
         system_instruction = AGENTS_CONFIG[current]["system_prompt"] + context_text
         
         try:
@@ -327,6 +347,9 @@ def run_orchestration_loop(state: ConversationState, user_message: str):
             ).choices[0].message.content
             
             if "[[ROUTE_TO_BILLING]]" in llm_res and current == "technical_support":
+                # Place 3 Log Call: Agent Handover
+                log_event("AGENT_HANDOVER", state.trace_id, {"source": "technical_support", "target": "billing"})
+                
                 state.handover_logs.append({
                     "timestamp": datetime.now(timezone.utc).strftime("%H:%M"),
                     "source": "Technical Support", "target": "Billing Support",

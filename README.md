@@ -107,7 +107,7 @@ clouddash/
 │   └── protocol.readme
 ├── knowledge_base/
 │   └── documents
-├── retrival/
+├── retrieval/
 │   ├── __init__.py
 │   ├── query_rewrite.py
 │   └── search_engine.py

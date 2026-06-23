@@ -94,28 +94,30 @@ Final Response to Customer
 ```
 clouddash/
 ├── agents/
-│   ├── models.py          # All Pydantic typed models
-│   ├── llm_client.py      # Groq API wrapper with retry logic
-│   ├── agent_impl.py      # Triage, Technical, Billing, Escalation agents
-│   └── guardrails.py      # Input & output safety guardrails
-├── knowledge_base/
-│   └── articles.json      # 20 KB articles (FAQ, troubleshooting, billing, API, access)
-├── retrieval/
-│   └── rag_pipeline.py    # TF-IDF + BM25 hybrid retrieval, query rewriting, re-ranking
-├── handover/
-│   ├── protocol.py        # Handover execution, context packaging, failure fallback
-│   └── logger.py          # Structured JSON logger with trace IDs
+│   ├── billing.py
+│   ├── escalation.py
+│   ├── orchestrator.py
+│   ├── technical.py
+│   └── triage.py
 ├── config/
-│   └── agents.yaml        # All agent system prompts, routing rules, model selection
-├── api/
-│   └── main.py            # FastAPI REST API
-├── cli/
-│   └── chat.py            # Interactive CLI interface
+│   ├── prompts.yaml
+│   └── settings.py
+├── handover/
+│   ├── protocol.py
+│   └── protocol.readme
+├── knowledge_base/
+│   └── documents
+├── retrival/
+│   ├── __init__.py
+│   ├── query_rewrite.py
+│   └── search_engine.py
 ├── tests/
-│   └── test_system.py     # 16 unit + 2 integration tests
-├── orchestrator.py        # Central orchestrator
+│   ├── test_agents.py
+│   └── test_orchestration.py
+├── app.py
 ├── requirements.txt
-└── .env.example
+├── .env
+└── README.md
 ```
 
 ---

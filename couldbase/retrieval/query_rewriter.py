@@ -8,8 +8,7 @@ def rewrite_search_query(chat_history: list, latest_query: str) -> str:
         return latest_query
         
     groq_client = Groq(api_key=os.getenv('GROQ_API_KEY'))
-    
-    # Format recent history for context matching
+
     formatted_turns = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in chat_history[-3:]])
     
     system_prompt = (

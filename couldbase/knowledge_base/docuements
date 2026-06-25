@@ -18,16 +18,16 @@ KB_ARTICLES = [
 
 @st.cache_resource
 def get_vector_db():
-    # 1. Initialize local in-memory ChromaDB client
+    # 1. Initialize 
     chroma_client = chromadb.Client()
     
-    # 2. Load the sentence-transformer model for vector generation
+    # 2. Load the sentence-transformer model
     embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
     
-    # 3. Create or access the dedicated collection
+    # 3. Create 
     kb_collection = chroma_client.create_collection(name="clouddash_kb", embedding_function=embedding_fn, get_or_create=True)
     
-    # 4. Ingestion Check: If the DB is completely empty, populate it with your articles
+    # 4. Ingestion Check
     if kb_collection.count() == 0:
         for doc in KB_ARTICLES:
             kb_collection.add(
@@ -37,5 +37,4 @@ def get_vector_db():
             )
     return kb_collection
 
-# Execute ingestion and hold the database link variable
 kb_collection = get_vector_db()

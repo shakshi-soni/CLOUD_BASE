@@ -12,10 +12,8 @@ from chromadb.utils import embedding_functions
 from pydantic import BaseModel, Field
 from groq import Groq
 
-# Force pure-python parsing to bypass protobuf descriptor compatibility limits
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 
-# ========== CONFIGURATION & SYSTEM INITIALIZATION ==========
 GROQ_API_KEY = os.getenv('GROQ_API_KEY') or st.secrets.get("GROQ_API_KEY")
 
 if not GROQ_API_KEY:
@@ -31,7 +29,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ========== ORIGINAL UI DESIGN SYSTEM ==========
 st.markdown("""
     <style>
     .stApp { background-color: #0A0F1C; color: #F3F4F6; }
@@ -145,7 +142,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ========== DATA STRUCTURE SCHEMA MODELS ==========
 class ConversationState(BaseModel):
     trace_id: str = Field(default_factory=lambda: f"trace_{int(datetime.now(timezone.utc).timestamp())}")
     current_agent: str = "triage_agent"
@@ -157,7 +153,6 @@ class ConversationState(BaseModel):
     active_kb_citations: List[Dict[str, str]] = []
     guardrail_alerts: List[str] = []
 
-# ========== JSON EVENT LOGGING ENGINE ==========
 def log_event(event_type: str, trace_id: str, payload: dict):
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -167,7 +162,6 @@ def log_event(event_type: str, trace_id: str, payload: dict):
     }
     print(json.dumps(entry))
 
-# ========== CHROMADB VECTOR ENGINE ==========
 @st.cache_resource
 def initialize_vector_db():
     chroma_client = chromadb.EphemeralClient()
@@ -220,7 +214,6 @@ def query_vector_kb(query: str, n_results: int = 1) -> List[Dict[str, str]]:
     except Exception:
         return []
 
-# ========== SYSTEM SECURITY GUARDRAILS ==========
 def check_input_guardrail(text: str) -> bool:
     malicious_patterns = [r"ignore previous instructions", r"system prompt", r"override rules"]
     for pattern in malicious_patterns:
@@ -233,7 +226,6 @@ def apply_output_guardrail(text: str) -> str:
     redacted = re.sub(r"secret_key_[a-zA-Z0-9]+", "[REDACTED_SECRET]", redacted)
     return redacted
 
-# ========== AGENT ROLES AND SETTINGS ==========
 AGENTS_CONFIG = {
     "triage_agent": {
         "model": "llama-3.1-8b-instant",
@@ -253,7 +245,6 @@ AGENTS_CONFIG = {
     }
 }
 
-# Helper to normalize LLM routing responses and completely eliminate KeyErrors
 def clean_agent_key(agent_name: str) -> str:
     if not agent_name:
         return "technical_support"
@@ -266,7 +257,6 @@ def clean_agent_key(agent_name: str) -> str:
         return "escalation"
     return "technical_support"
 
-# ========== PIPELINE MANAGEMENT & EXTRACTION ==========
 def run_orchestration_loop(state: ConversationState, user_message: str):
     state.guardrail_alerts = []
 
@@ -279,11 +269,9 @@ def run_orchestration_loop(state: ConversationState, user_message: str):
     state.history.append({"role": "user", "content": user_message})
     
     matches = query_vector_kb(user_message, n_results=1)
-    
-    # Place 2 Log Call: KB Retrieval
+
     log_event("KB_RETRIEVAL", state.trace_id, {"query": user_message, "result": matches[0]['id'] if matches else "none"})
     
-    # 3. KB Not Found Handling Execution Turn
     if not matches:
         state.history.append({"role": "assistant", "content": "I couldn't find relevant information in our knowledge base for this query. Would you like me to escalate this to our product team?"})
         return
@@ -292,7 +280,6 @@ def run_orchestration_loop(state: ConversationState, user_message: str):
     if matches[0] not in state.active_kb_citations:
         state.active_kb_citations.append(matches[0])
 
-    # Dynamic extraction turn
     try:
         extraction_res = client.chat.completions.create(
             model=AGENTS_CONFIG["triage_agent"]["model"],
@@ -325,13 +312,11 @@ def run_orchestration_loop(state: ConversationState, user_message: str):
         if state.current_agent == "triage_agent":
             state.current_agent = "technical_support"
 
-    # Handoff Hops execution Loop
     hops = 0
     while hops < 3:
         current = clean_agent_key(state.current_agent)
-        state.current_agent = current  # Force state alignment
+        state.current_agent = current  
 
-        # Place 1 Log Call: Agent Invocation
         log_event("AGENT_INVOCATION", state.trace_id, {"agent": current})
 
         system_instruction = AGENTS_CONFIG[current]["system_prompt"] + context_text
@@ -347,7 +332,6 @@ def run_orchestration_loop(state: ConversationState, user_message: str):
             ).choices[0].message.content
             
             if "[[ROUTE_TO_BILLING]]" in llm_res and current == "technical_support":
-                # Place 3 Log Call: Agent Handover
                 log_event("AGENT_HANDOVER", state.trace_id, {"source": "technical_support", "target": "billing"})
                 
                 state.handover_logs.append({
@@ -378,7 +362,6 @@ def run_orchestration_loop(state: ConversationState, user_message: str):
             state.history.append({"role": "assistant", "content": "I am connecting an escalation team lead to look into this context pattern for you."})
             break
 
-# ========== INITIALIZATION ==========
 if "core_state" not in st.session_state:
     st.session_state.core_state = ConversationState()
 if "logs" not in st.session_state:
@@ -386,7 +369,6 @@ if "logs" not in st.session_state:
 
 current_state = st.session_state.core_state
 
-# ========== DRAW DASHBOARD USER INTERFACE ==========
 st.markdown("<h1 class='hero-title'>CloudDash AI Support Engine</h1>", unsafe_allow_html=True)
 st.markdown("<p class='hero-subtitle'>Multi-Agent Customer Support Platform</p>", unsafe_allow_html=True)
 st.markdown("<p class='hero-badges'>POWERED BY RAG • AGENT ROUTING • HUMAN ESCALATION <span style='color:#10B981; margin-left:15px;'>● [ACTIVE] 99.9% RESOLUTION TRACKING</span></p>", unsafe_allow_html=True)
@@ -409,7 +391,6 @@ st.markdown("<div class='clean-hr'></div>", unsafe_allow_html=True)
 for alert in current_state.guardrail_alerts:
     st.markdown(f"<div class='guardrail-warning'>{alert}</div>", unsafe_allow_html=True)
 
-# Sidebar Parameters Design
 with st.sidebar:
     st.markdown("<h3 style='color:#F9FAFB; margin-bottom:1rem; font-size:1.1rem;'>🛰️ Operational Parameters</h3>", unsafe_allow_html=True)
     st.markdown(f"""
@@ -430,7 +411,6 @@ with st.sidebar:
         st.session_state.logs = []
         st.rerun()
 
-# Scenarios Cards Selector Strip
 st.markdown("<p style='font-size:0.75rem; font-weight:600; color:#9CA3AF; text-transform:uppercase; margin-bottom:0.6rem; letter-spacing:0.05em;'>Pre-seeded System Validation Scenarios</p>", unsafe_allow_html=True)
 b1, b2, b3, b4 = st.columns(4)
 faq_query = None
@@ -453,7 +433,6 @@ if faq_query:
 
 st.markdown("<div class='clean-hr'></div>", unsafe_allow_html=True)
 
-# Main Application Workspace
 chat_layout, telemetry_layout = st.columns([11, 9], gap="large")
 
 with chat_layout:
@@ -470,7 +449,7 @@ with chat_layout:
         st.rerun()
 
 with telemetry_layout:
-    # A. Agent Matrix View
+
     st.markdown("<h4 style='color:#F9FAFB; margin-bottom:0.8rem; font-size:1.1rem; font-weight:600;'>🧬 Agent Pipeline State Matrix</h4>", unsafe_allow_html=True)
     c = clean_agent_key(current_state.current_agent)
     triage_act = "node-active" if c == "triage_agent" else ""
@@ -489,8 +468,7 @@ with telemetry_layout:
             <div class='pipeline-node node-escalation {esc_act}'>🔴 Escalation Agent</div>
         </div>
     """, unsafe_allow_html=True)
-    
-    # B. RAG Citations Ledger Box
+
     st.markdown("<h4 style='color:#F9FAFB; margin-bottom:0.8rem; font-size:1.1rem; font-weight:600;'>📚 Retrieved Grounding Sources</h4>", unsafe_allow_html=True)
     if current_state.active_kb_citations:
         st.markdown("<div style='background:#111827; border:1px solid #1F2937; padding:1rem; border-radius:10px; margin-bottom:1.5rem;'>", unsafe_allow_html=True)
@@ -505,8 +483,7 @@ with telemetry_layout:
         st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.markdown("<div style='color:#9CA3AF; font-size:0.85rem; font-style:italic; margin-bottom:1.5rem;'>No knowledge assets fetched yet.</div>", unsafe_allow_html=True)
-    
-    # C. Handover Timeline Feed
+
     st.markdown("<h4 style='color:#F9FAFB; margin-bottom:0.8rem; font-size:1.1rem; font-weight:600;'>⏳ Handover Activity Feed</h4>", unsafe_allow_html=True)
     if current_state.handover_logs:
         for item in current_state.handover_logs:

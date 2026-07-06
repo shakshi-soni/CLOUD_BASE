@@ -1,4 +1,12 @@
+
 # CloudDash Multi-Agent Support System
+
+A production-grade prototype multi-agent customer support system for **CloudDash** — a fictional cloud infrastructure monitoring SaaS platform. Built for the AI Engineering Intern take-home assessment.
+
+[![Live Demo](https://img.shields.io/badge/🚀%20Live%20Demo-Streamlit-FF4B4B?style=for-the-badge)](https://travelagent-bqtmr6s69hxtqk8oxibuqj.streamlit.app/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![Streamlit](https://img.shields.io/badge/Streamlit-App-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io)
+[![LLM Powered](https://img.shields.io/badge/LLM-Powered-8A2BE2?style=for-the-badge&logo=openai&logoColor=white)]()
 
 A production-grade prototype multi-agent customer support system for **CloudDash** — a fictional cloud infrastructure monitoring SaaS platform. Built for the AI Engineering Intern take-home assessment.
 

@@ -241,3 +241,19 @@ Interactive docs: `http://localhost:8000/docs`
 - **Simulation only**: plan changes and refunds are simulated responses, not real transactions
 - **No streaming**: responses are returned all at once, not streamed token-by-token
 - **Rate limiting**: no per-user rate limiting on the API endpoints
+
+## 🙋‍♂️ About the Developer
+
+Built with ❤️ by **[SHAKSHI SONI]**
+
+I'm a developer passionate about building practical AI applications that solve real-world problems. This project explores agentic AI design — where an LLM doesn't just chat, but *acts*, by calling tools, remembering context, and making decisions autonomously.
+---
+
+📫 **Connect with me:**
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=flat&logo=linkedin)](https://linkedin.com/in/yourprofile)
+
+
+<div align="center">
+
+**⭐ If you found this project interesting, please give it a star! It helps a lot.**
+

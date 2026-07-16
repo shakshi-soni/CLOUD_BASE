@@ -1,0 +1,13 @@
+name: Keep Alive - CloudBase
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping app
+        run: curl -f https://cloudbase-envp6xbcxfvjnybalsb33h.streamlit.app/  || echo "Ping failed"

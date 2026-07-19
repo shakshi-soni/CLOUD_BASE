@@ -17,7 +17,7 @@ options.add_argument("--window-size=1920,1080")
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
 try:
-    driver.get("YOUR_CLOUDBASE_APP_URL_HERE")
+    driver.get("https://cloudbase-envp6xbcxfvjnybalsb33h.streamlit.app/")
     wait = WebDriverWait(driver, 15)
     try:
         button = wait.until(

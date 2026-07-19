@@ -1,13 +1,23 @@
 name: Keep Alive - CloudBase
-
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '0 */5 * * *'
   workflow_dispatch:
 
 jobs:
-  ping:
+  wake:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping app
-        run: curl -f https://cloudbase-envp6xbcxfvjnybalsb33h.streamlit.app/  || echo "Ping failed"
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install selenium webdriver-manager
+
+      - name: Wake app
+        run: python wake_up.py

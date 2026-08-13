@@ -257,7 +257,7 @@ I'm a developer passionate about building practical AI applications that solve r
 ---
 
 📫 **Connect with me:**
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=flat&logo=linkedin)](https://linkedin.com/in/yourprofile)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=flat&logo=linkedin)](https://www.linkedin.com/in/shakshi-soni-961048411/)
 
 
 <div align="center">

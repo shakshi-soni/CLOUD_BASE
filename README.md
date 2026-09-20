@@ -134,9 +134,6 @@ This isn't a production support platform, it's a take-home project. Specifically
 7. Replace `[[FLAG]]` routing with real structured tool calls
 8. Redis-backed sessions for multi-instance deployment
 
-## Why I built this
-
-<!-- Write this part yourself, in your own words — what you wanted to learn, what was hard, what you changed while building it, what surprised you. This is the section that should sound the most like you, not me. -->
 
 ## About
 

@@ -1,43 +1,29 @@
+# CloudDash — Multi-Agent Customer Support System
 
-# CloudDash Multi-Agent Support System
+Multi-agent support system for CloudDash (fictional cloud monitoring SaaS). Built for the AI Engineering Intern take-home.
 
-A production-grade prototype multi-agent customer support system for **CloudDash** — a fictional cloud infrastructure monitoring SaaS platform. Built for the AI Engineering Intern take-home assessment.
+Instead of one LLM handling everything, there's a triage agent that reads the message first and routes it to Technical, Billing, or Escalation. Each of those has its own KB access and its own prompt. If a conversation needs to move between agents mid-chat, there's an actual handover step that carries the history and extracted entities over, so the user isn't asked the same thing twice.
 
 [![Live Demo](https://img.shields.io/badge/🚀%20Live%20Demo-Streamlit-FF4B4B?style=for-the-badge)](https://cloudbase-envp6xbcxfvjnybalsb33h.streamlit.app/)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Streamlit](https://img.shields.io/badge/Streamlit-App-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io)
-[![LLM Powered](https://img.shields.io/badge/LLM-Powered-8A2BE2?style=for-the-badge&logo=openai&logoColor=white)]()
 
-
----
-
-## Quick Start
+## Setup
 
 ```bash
-# 1. Clone and enter the project
+git clone <repo-url>
 cd clouddash
-
-# 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Set your API key
 cp .env.example .env
-# Edit .env and add: GROQ_API_KEY=your_key_here
+# add GROQ_API_KEY=your_key_here
 
-# 4a. Run the CLI chat interface
-python cli/chat.py
-
-# 4b. OR run the REST API
-python api/main.py
-# API docs at: http://localhost:8000/docs
-
-# 5. Run the test suite
-python tests/test_system.py
+python cli/chat.py          # CLI
+python api/main.py          # or run as API, docs at localhost:8000/docs
+python tests/test_system.py # tests
 ```
 
----
-
-## Architecture Overview
+## Flow
 
 ```
 User Input
@@ -94,9 +80,7 @@ User Input
 Final Response to Customer
 ```
 
----
-
-## Project Structure
+## Structure
 
 ```
 clouddash/
@@ -127,140 +111,115 @@ clouddash/
 └── README.md
 ```
 
----
+## RAG
 
-## RAG Pipeline Design
+Chunking: 4-sentence windows, step of 2, so context doesn't get cut off at a boundary. Anything under 4 sentences stays as one chunk. Ends up as 57 chunks from 20 articles.
 
-### Chunking Strategy
-Articles are split into overlapping sentence windows (4 sentences, step 2) to preserve context across chunk boundaries. Short articles (≤4 sentences) are kept as single chunks. This produced 57 chunks from 20 articles.
+Retrieval is TF-IDF (60%) + BM25 (40%, via `rank-bm25`), scores combined with a weighted sum. BM25 pulls its weight on stuff like exact error codes and product names that TF-IDF alone tends to miss.
 
-### Hybrid Retrieval
-- **Vector (60%)**: TF-IDF cosine similarity — lightweight, no external embedding service needed
-- **BM25 (40%)**: Keyword lexical matching via `rank-bm25` — strong on exact term matches like error codes and product names
-- Scores are fused with a weighted sum before ranking
+Query gets the last 300 chars of conversation history prepended before retrieval runs — otherwise "that issue" or "it" means nothing to the retriever on a follow-up message.
 
-### Query Rewriting
-Before retrieval, the user's query is prepended with the last 300 characters of conversation context. This allows the retriever to resolve pronoun references like "that issue" or "it".
+Responses carry `cited_sources: [KB-XXX — Article Title]`, and Technical/Billing also put `[Source: KB-XXX]` directly in the reply text.
 
-### Citation
-Every agent response includes `cited_sources: [KB-XXX — Article Title]`. The Technical and Billing agents are instructed to append `[Source: KB-XXX]` inline in their responses.
+## Handover
 
----
+Agent emits `[[ROUTE_TO_BILLING]]` or similar in its output when it decides the conversation belongs elsewhere. Orchestrator picks that up, calls `execute_handover()`:
 
-## Agent Handover Protocol
+- checks the target agent exists
+- builds a `HandoverPayload` (history + entity snapshot + summary)
+- stores it in `state.metadata["last_handover"]`
+- logs to `state.handover_logs`
+- updates `state.current_agent`
 
-1. Agent detects a domain boundary (via `[[ROUTE_TO_BILLING]]` or `[[ROUTE_TO_ESCALATION]]` signals in LLM output)
-2. Orchestrator calls `execute_handover()`:
-   - Validates target agent exists
-   - Builds `HandoverPayload` (full history + entity snapshot + conversation summary)
-   - Stores payload in `state.metadata["last_handover"]` for the receiving agent
-   - Appends `HandoverLog` to `state.handover_logs`
-   - Updates `state.current_agent`
-3. Receiving agent reads `state.metadata["last_handover"]` so it has full prior context without the customer repeating themselves
-4. On failure: falls back to `triage_agent` (or `escalation` if that was the intended target)
-
----
+Next agent reads `last_handover` on its turn so it already has context. If a handover fails it falls back to triage, or escalation if that was already the target.
 
 ## Guardrails
 
-| Type | Guardrail | Mechanism |
-|------|-----------|-----------|
-| Input | Prompt injection detection | Regex pattern matching (12 patterns) |
-| Input | Off-topic filtering | Keyword allowlist/blocklist |
-| Output | PII redaction | Regex: email, card numbers, phone, SSN |
-| Output | Hallucination check | Specific numerical claims validated against KB context |
-| Logic | No-KB fabrication | If retrieval returns 0 results, agent escalates — never invents |
+Input: prompt injection detection (regex, 12 patterns), off-topic filtering (keyword allow/blocklist).
 
----
+Output: PII redaction (email, card, phone, SSN via regex), hallucination check on numeric claims against retrieved context.
 
-## Configuration
+Global rule: zero KB results = escalate. Never guess.
 
-All agent behaviour is defined in `config/agents.yaml`. Adding a new agent type:
+## Adding a new agent
 
-1. Add a new key under `config/agents.yaml` with `model`, `description`, and `system_prompt`
-2. Create the agent function in `agents/agent_impl.py`
-3. Add its name to `VALID_AGENTS` in `handover/protocol.py`
-4. Add a routing branch in `orchestrator.py`
+1. Add entry to `config/agents.yaml` — `model`, `description`, `system_prompt`
+2. Write the function in `agents/agent_impl.py`
+3. Add name to `VALID_AGENTS` in `handover/protocol.py`
+4. Add routing branch in `orchestrator.py`
 
-The core orchestration loop does not need to change for new agents.
+Orchestrator loop itself doesn't need touching.
 
----
+## Test cases
 
-## Test Scenarios
-
-### Scenario 1 — Technical (Single Agent)
+Single agent:
 ```
 "My CloudDash alerts stopped firing after I updated my AWS integration credentials yesterday."
-→ Triage → Technical Support → KB-002 retrieved → step-by-step resolution with citation
+→ Triage → Technical → KB-002 → fix with citation
 ```
 
-### Scenario 2 — Cross-Agent Handover
+Handover mid-conversation:
 ```
 "I want to upgrade from Pro to Enterprise, but first check my SSO issue."
-→ Triage → Technical (SSO) → [[ROUTE_TO_BILLING]] → Billing has full prior context
+→ Triage → Technical (SSO) → [[ROUTE_TO_BILLING]] → Billing already has context
 ```
 
-### Scenario 3 — Escalation
+Escalation:
 ```
 "I've been charged twice for April. I need an immediate refund and want to speak to a manager."
-→ Triage → Billing → [[ROUTE_TO_ESCALATION]] → Escalation packages manifest
+→ Triage → Billing → [[ROUTE_TO_ESCALATION]]
 ```
 
-### Scenario 4 — KB Miss
+KB miss:
 ```
 "Does CloudDash support Datadog integration?"
-→ Technical retrieves 0 KB results → honestly acknowledges → offers escalation
+→ Technical, 0 results → says so → offers escalation
 ```
 
----
-
-## REST API Endpoints
+## API
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health check |
-| POST | `/conversations` | Start a new session |
-| POST | `/conversations/{id}/messages` | Send a message |
-| GET | `/conversations/{id}` | Get history + handover logs |
+|---|---|---|
+| GET | `/health` | health check |
+| POST | `/conversations` | new session |
+| POST | `/conversations/{id}/messages` | send message |
+| GET | `/conversations/{id}` | history + handover logs |
 
-Interactive docs: `http://localhost:8000/docs`
+Docs: `localhost:8000/docs`
 
----
+## Notes on decisions
 
-## Design Decisions & Trade-offs
+TF-IDF + BM25 over sentence-transformers because no heavy embedding model to load, works offline. Misses semantic paraphrases sometimes, TF-IDF just isn't that smart.
 
-| Decision | Rationale | Trade-off |
-|----------|-----------|-----------|
-| TF-IDF + BM25 instead of sentence-transformers | Zero dependency on large models, works offline, fast | Lower semantic similarity quality vs dense embeddings |
-| Groq + Llama3-8b | Fast inference, free tier generous, low latency | Weaker reasoning than GPT-4 class models |
-| In-memory session store | Simple, no DB setup needed for prototype | Sessions lost on restart; production would use Redis |
-| Routing signals in LLM output (`[[FLAG]]`) | Easy to implement, no tool-calling API needed | Slightly fragile; production would use structured tool calls |
-| YAML config for all prompts | Prompts editable without code changes | YAML indentation errors can break startup |
-| Max 4 routing hops | Prevents infinite loops | Edge cases with 5+ agent transitions will hard-escalate |
+Groq + Llama3-8B for speed and the free tier. Reasoning is weaker than GPT-4 class, noticeable on trickier billing edge cases.
 
----
+Sessions are in-memory. Fine for a demo, gone on restart. Would need Redis for anything real.
 
-## Known Limitations
+`[[FLAG]]` tokens for routing instead of proper tool calls — faster to build, but it's a string match so it's a bit fragile if the model phrases things weird.
 
-- **No persistent storage**: sessions are in-memory and lost on restart
-- **TF-IDF embeddings**: lower recall on semantic paraphrases vs dense vector models
-- **Single-process**: no horizontal scaling; would need a session store (Redis) for multi-instance
-- **Simulation only**: plan changes and refunds are simulated responses, not real transactions
-- **No streaming**: responses are returned all at once, not streamed token-by-token
-- **Rate limiting**: no per-user rate limiting on the API endpoints
+Prompts in YAML so I can tweak wording without redeploying, but a bad indent breaks the whole thing on startup (happened to me twice).
 
-## 🙋‍♂️ About the Developer
+Capped routing at 4 hops to stop loops. A genuinely weird 5-hop case just force-escalates.
 
-Built with ❤️ by **[SHAKSHI SONI]**
+## Not done yet
 
-I'm a developer passionate about building practical AI applications that solve real-world problems. This project explores agentic AI design — where an LLM doesn't just chat, but *acts*, by calling tools, remembering context, and making decisions autonomously.
----
+- no persistence, in-memory only
+- TF-IDF misses paraphrased questions sometimes
+- single process, no scaling
+- refunds/plan changes are simulated, not real
+- no streaming
+- no rate limiting
 
-📫 **Connect with me:**
+## If I keep working on this
+
+- dense embeddings behind a flag so I can compare against TF-IDF directly
+- Redis for sessions
+- real tool calling instead of `[[FLAG]]`
+- streaming
+- rate limiting
+
+## About
+
+Shakshi Soni. Into agentic AI — systems where the model does things, not just talks.
+
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=flat&logo=linkedin)](https://www.linkedin.com/in/shakshi-soni-961048411/)
-
-
-<div align="center">
-
-**⭐ If you found this project interesting, please give it a star! It helps a lot.**
-
